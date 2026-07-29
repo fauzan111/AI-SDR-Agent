@@ -1,0 +1,45 @@
+# Render blueprint (infrastructure-as-code).
+# Deploy: Render dashboard -> New -> Blueprint -> connect this repo. Render reads
+# this file and provisions the web service + a Postgres database, then redeploys
+# on every push to main.
+#
+# PROCESS_INLINE=true keeps lead processing synchronous so the web service alone
+# runs the whole flow (no Celery/Redis needed) — ideal for the free tier and a
+# clickable demo. For a full async deployment, set PROCESS_INLINE=false and add a
+# Redis instance + a Celery worker service.
+
+services:
+  - type: web
+    name: sdr-agent
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: prod
+      - key: PROCESS_INLINE
+        value: "true"
+      # Offline-friendly defaults so the live URL works with no secrets.
+      # Set ANTHROPIC_API_KEY for LLM-judged conversational fit (vs heuristic),
+      # and CRM_PROVIDER=hubspot + HUBSPOT_ACCESS_TOKEN for real HubSpot pushes.
+      - key: CRM_PROVIDER
+        value: mock
+      - key: LLM_PROVIDER
+        value: anthropic
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: HUBSPOT_ACCESS_TOKEN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sdr-agent-db
+          property: connectionString
+
+databases:
+  - name: sdr-agent-db
+    plan: free
+    postgresMajorVersion: "16"

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI SDR Agent — Live Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .fade-in { animation: fade .25s ease-out; } @keyframes fade { from {opacity:0;transform:translateY(4px)} to {opacity:1;transform:none} }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-violet-600 flex items-center justify-center text-white font-bold">SDR</div>
+        <div>
+          <h1 class="font-semibold text-slate-900 leading-tight">AI Sales Development Rep</h1>
+          <p class="text-xs text-slate-500">Qualify → enrich → CRM push · idempotent webhooks</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 text-sm">
+        <span id="tenantBadge" class="hidden px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-mono text-xs"></span>
+        <span class="flex items-center gap-1.5 text-emerald-600"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live</span>
+        <a href="/docs" class="text-violet-600 hover:underline">API docs</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-8 grid gap-6 lg:grid-cols-12">
+    <!-- Left: ICP + lead form -->
+    <section class="lg:col-span-5 space-y-6">
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="font-semibold text-slate-900 mb-1">1 · Define your ICP</h2>
+        <p class="text-xs text-slate-500 mb-4">Hard filters run in code before any LLM call.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="block text-xs font-medium text-slate-600 mb-1">Min company size</label>
+            <input id="minSize" type="number" value="50" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" /></div>
+          <div><label class="block text-xs font-medium text-slate-600 mb-1">Qualify threshold</label>
+            <input id="threshold" type="number" value="60" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" /></div>
+        </div>
+        <label class="block text-xs font-medium text-slate-600 mb-1 mt-3">Industries (comma-sep, blank = any)</label>
+        <input id="industries" value="software,finance" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4" />
+        <button id="signupBtn" class="w-full bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg py-2.5">Create workspace &amp; sign in</button>
+      </div>
+
+      <div id="leadCard" class="bg-white rounded-xl border border-slate-200 p-5 opacity-50 pointer-events-none transition">
+        <h2 class="font-semibold text-slate-900 mb-1">2 · Inbound lead (webhook / form)</h2>
+        <p class="text-xs text-slate-500 mb-4">The agent qualifies, enriches, and pushes to CRM.</p>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="lEmail" placeholder="email" value="vp@bigsoftware.com" class="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <input id="lName" placeholder="name" value="Alex VP" class="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <input id="lCompany" placeholder="company" value="BigSoftware" class="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <input id="lSize" type="number" placeholder="company size" value="400" class="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <input id="lIndustry" placeholder="industry" value="software" class="border border-slate-300 rounded-lg px-3 py-2 text-sm col-span-2" />
+        </div>
+        <textarea id="lMessage" rows="2" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-2" placeholder="lead message">Budget approved — want a demo and pricing for 60 seats this quarter.</textarea>
+        <div class="flex gap-2 mt-3">
+          <button id="submitBtn" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-lg py-2.5">Submit lead</button>
+          <button id="retryBtn" title="Re-send the exact same lead" class="flex-1 border border-violet-300 text-violet-700 hover:bg-violet-50 text-sm font-medium rounded-lg py-2.5">Re-send same lead ↺</button>
+        </div>
+        <div id="result" class="mt-4"></div>
+      </div>
+    </section>
+
+    <!-- Right: leads table + idempotency explainer -->
+    <section class="lg:col-span-7 space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-semibold text-slate-900">Leads</h2>
+          <button id="refreshLeads" class="text-xs text-violet-600 hover:underline">Refresh</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left text-xs text-slate-400 border-b border-slate-200">
+              <th class="py-2 pr-2">Company</th><th class="pr-2">Status</th><th class="pr-2">Score</th><th class="pr-2">CRM id</th><th>Next action</th>
+            </tr></thead>
+            <tbody id="leadRows"><tr><td colspan="5" class="py-6 text-center text-slate-400">No leads yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="bg-violet-50 border border-violet-100 rounded-xl p-4 text-xs text-violet-900 leading-relaxed">
+        <strong>Why "Re-send same lead" matters:</strong> a naive agent would create a duplicate CRM entry on every retry.
+        Here the webhook is idempotent — same <code>external_id</code> returns the <em>same</em> lead
+        (<code>deduplicated: true</code>), guaranteed by a DB unique constraint. Hard filters (size/industry) are
+        deterministic code; only the conversational-fit score is LLM-judged.
+      </div>
+    </section>
+  </main>
+
+  <footer class="max-w-6xl mx-auto px-6 pb-10 text-center text-xs text-slate-400">
+    Offline mode scores fit with a heuristic and pushes to a mock HubSpot. Set ANTHROPIC_API_KEY / HUBSPOT_ACCESS_TOKEN on the server for the real thing.
+  </footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = localStorage.getItem("sdr_token") || null;
+let tenantId = localStorage.getItem("sdr_tenant") || null;
+let lastExternalId = null;
+
+async function api(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+  if (token) headers["Authorization"] = "Bearer " + token;
+  const res = await fetch(path, { ...opts, headers });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  return res.json();
+}
+
+function signedIn() {
+  $("tenantBadge").classList.remove("hidden");
+  $("tenantBadge").textContent = "workspace " + tenantId.slice(0, 8);
+  $("leadCard").classList.remove("opacity-50", "pointer-events-none");
+  refreshLeads();
+}
+
+$("signupBtn").onclick = async () => {
+  try {
+    const out = await api("/tenants/signup", { method: "POST", body: JSON.stringify({
+      name: "Demo Co", icp_min_company_size: parseInt($("minSize").value),
+      icp_industries: $("industries").value, qualification_threshold: parseInt($("threshold").value),
+    })});
+    token = out.access_token; tenantId = out.tenant_id;
+    localStorage.setItem("sdr_token", token); localStorage.setItem("sdr_tenant", tenantId);
+    signedIn();
+  } catch (e) { alert("Signup failed: " + e.message); }
+};
+
+function statusPill(s) {
+  const map = { scheduled: "bg-emerald-100 text-emerald-700", pushed_to_crm: "bg-emerald-100 text-emerald-700",
+    qualified: "bg-emerald-100 text-emerald-700", disqualified: "bg-slate-200 text-slate-600",
+    received: "bg-blue-100 text-blue-700", failed: "bg-red-100 text-red-700" };
+  return '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded ' + (map[s]||"bg-slate-100") + '">' + s.toUpperCase() + '</span>';
+}
+
+function renderResult(lead) {
+  const dedup = lead.deduplicated
+    ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">DEDUPLICATED ↺ same lead</span>'
+    : '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">NEW LEAD</span>';
+  $("result").innerHTML =
+    '<div class="fade-in border border-slate-200 rounded-lg p-3 text-sm space-y-1">' +
+    '<div class="flex items-center gap-2">' + dedup + statusPill(lead.status) +
+    '<span class="text-xs text-slate-400 font-mono">' + lead.id.slice(0,8) + '</span></div>' +
+    '<div>Score: <strong>' + (lead.score ?? "—") + '</strong> · ' + (lead.notes || "") + '</div>' +
+    (lead.crm_id ? '<div class="text-xs text-slate-500">CRM: <code>' + lead.crm_id + '</code></div>' : '') +
+    (lead.meeting_link ? '<div class="text-xs"><a class="text-violet-600 underline" href="' + lead.meeting_link + '" target="_blank">Meeting link</a></div>' : '') +
+    '</div>';
+}
+
+async function submitLead(externalId) {
+  const payload = {
+    external_id: externalId, email: $("lEmail").value, name: $("lName").value,
+    company: $("lCompany").value, company_size: parseInt($("lSize").value) || null,
+    industry: $("lIndustry").value, message: $("lMessage").value,
+  };
+  const lead = await api("/webhooks/leads", { method: "POST", body: JSON.stringify(payload) });
+  renderResult(lead); refreshLeads();
+}
+
+$("submitBtn").onclick = async () => {
+  lastExternalId = "lead-" + Math.random().toString(36).slice(2, 10);
+  try { await submitLead(lastExternalId); } catch (e) { alert("Submit failed: " + e.message); }
+};
+$("retryBtn").onclick = async () => {
+  if (!lastExternalId) return alert("Submit a lead first, then re-send it.");
+  try { await submitLead(lastExternalId); } catch (e) { alert("Retry failed: " + e.message); }
+};
+
+async function refreshLeads() {
+  try {
+    const rows = await api("/leads");
+    $("leadRows").innerHTML = rows.length ? rows.map(l =>
+      '<tr class="border-b border-slate-100"><td class="py-2 pr-2">' + (l.company || "—") +
+      '<div class="text-xs text-slate-400">' + l.email + '</div></td>' +
+      '<td class="pr-2">' + statusPill(l.status) + '</td>' +
+      '<td class="pr-2">' + (l.score ?? "—") + '</td>' +
+      '<td class="pr-2 font-mono text-xs text-slate-500">' + (l.crm_id || "—") + '</td>' +
+      '<td class="text-xs text-slate-500">' + (l.next_action || "—") + '</td></tr>'
+    ).join("") : '<tr><td colspan="5" class="py-6 text-center text-slate-400">No leads yet.</td></tr>';
+  } catch { /* not signed in */ }
+}
+$("refreshLeads").onclick = refreshLeads;
+
+if (token && tenantId) signedIn();
+</script>
+</body>
+</html>
